@@ -1,0 +1,34 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# rclone/rclone.conf.template
+#
+# HOW TO SET UP (one-time, ~5 minutes):
+#
+# 1. Install rclone on your LOCAL machine (outside Docker):
+#       Windows: https://rclone.org/downloads/  (unzip, add to PATH)
+#
+# 2. Run the interactive config wizard on your local machine:
+#       rclone config
+#       → n  (new remote)
+#       → name: gdrive
+#       → storage: drive  (Google Drive)
+#       → client_id: (leave blank)
+#       → client_secret: (leave blank)
+#       → scope: 1  (full access)
+#       → Follow the browser OAuth flow
+#       → team_drive: (leave blank)
+#       → y  (confirm)
+#
+# 3. Copy the generated config to this project:
+#       Windows: copy %APPDATA%\rclone\rclone.conf rclone\rclone.conf
+#
+# 4. The docker-compose.yml mounts rclone/rclone.conf into the container
+#    at /root/.config/rclone/rclone.conf automatically.
+#
+# NEVER commit rclone.conf to git — it contains your OAuth tokens.
+# It is already in .gitignore.
+# ──────────────────────────────────────────────────────────────────────────────
+
+[gdrive]
+type = drive
+scope = drive
+token = REPLACE_WITH_YOUR_TOKEN_AFTER_rclone_config

@@ -1,0 +1,123 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# CPU-only setup — Xeon W-10855M, 32 GB RAM, no discrete GPU
+# ──────────────────────────────────────────────────────────────────────────────
+
+volumes:
+  data_raw:
+  data_processed:
+  checkpoints:
+  logs:
+  outputs:
+  mlflow_db:
+
+# ── Shared environment for training containers ────────────────────────────────
+x-train-env: &train-env
+  TF_CPP_MIN_LOG_LEVEL: "2"
+  TF_NUM_INTEROP_THREADS: "0"      # 0 = let TF decide (uses all cores)
+  TF_NUM_INTRAOP_THREADS: "0"
+  OMP_NUM_THREADS: "12"            # Xeon W-10855M: 6 cores / 12 threads
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+
+# ── Shared volume mounts ──────────────────────────────────────────────────────
+x-train-volumes: &train-volumes
+  - ./src:/workspace/src
+  - ./configs:/workspace/configs
+  - ./notebooks:/workspace/notebooks
+  - ./scripts:/workspace/scripts
+  - ./rclone/rclone.conf:/root/.config/rclone/rclone.conf:ro
+  - data_raw:/workspace/data/raw
+  - data_processed:/workspace/data/processed
+  - checkpoints:/workspace/checkpoints
+  - outputs:/workspace/outputs
+  - logs:/workspace/logs
+
+services:
+
+  # ── Main training shell ────────────────────────────────────────────────────
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: han-spam:latest
+    container_name: han_train
+    environment:
+      <<: *train-env
+    volumes: *train-volumes
+    # Give the container access to all CPU cores and cap RAM at 28 GB
+    # (leave ~4 GB for the OS and other services)
+    deploy:
+      resources:
+        limits:
+          cpus: "12"
+          memory: 28G
+        reservations:
+          cpus: "6"
+          memory: 8G
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    command: bash
+
+  # ── Jupyter Lab ────────────────────────────────────────────────────────────
+  jupyter:
+    image: han-spam:latest
+    container_name: han_jupyter
+    environment:
+      <<: *train-env
+      JUPYTER_TOKEN: hanspam          # change if exposed externally
+    volumes: *train-volumes
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+    ports:
+      - "8888:8888"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    command: >
+      jupyter lab
+        --allow-root
+        --ip=0.0.0.0
+        --port=8888
+        --no-browser
+        --IdentityProvider.token=hanspam
+        --notebook-dir=/workspace
+
+  # ── MLflow tracking server ─────────────────────────────────────────────────
+  mlflow:
+    image: python:3.10-slim
+    container_name: han_mlflow
+    environment:
+      MLFLOW_BACKEND_STORE_URI: sqlite:////mlflow/mlruns.db
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: /mlflow/artifacts
+    volumes:
+      - mlflow_db:/mlflow
+    ports:
+      - "5000:5000"
+    command: >
+      bash -c "pip install -q mlflow==2.14.2 &&
+               mlflow server
+                 --host 0.0.0.0
+                 --port 5000
+                 --backend-store-uri sqlite:////mlflow/mlruns.db
+                 --default-artifact-root /mlflow/artifacts"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  # ── TensorBoard ────────────────────────────────────────────────────────────
+  tensorboard:
+    image: tensorflow/tensorflow:2.16.1
+    container_name: han_tensorboard
+    volumes:
+      - logs:/logs
+    ports:
+      - "6006:6006"
+    command: tensorboard --logdir /logs --host 0.0.0.0 --port 6006
