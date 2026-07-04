@@ -1,0 +1,54 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Datasets — never commit raw or processed data ─────────────────────────────
+data/raw/
+data/processed/
+
+# ── Model artefacts — large binary files, stored on Google Drive instead ──────
+checkpoints/
+*.weights.h5
+*.h5
+*.keras
+*.bin           # FastText model binary
+*.npy           # numpy tensors (embedding matrix, encoded datasets)
+*.parquet       # processed dataframes
+
+# ── Experiment tracking ───────────────────────────────────────────────────────
+logs/
+mlruns/
+mlflow.db
+
+# ── Results & plots — pulled from Drive, not committed ────────────────────────
+outputs/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.env
+.env.*
+
+# ── Google Drive credentials — NEVER commit, contains OAuth tokens ────────────
+rclone/rclone.conf
+
+# ── OS artefacts ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

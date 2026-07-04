@@ -1,0 +1,85 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# configs/config.yaml
+# Tuned for: Intel Xeon W-10855M (12 threads), 32 GB RAM, CPU-only
+# ──────────────────────────────────────────────────────────────────────────────
+
+project:
+  name: han-email-spam
+  seed: 42
+
+# ── Datasets ──────────────────────────────────────────────────────────────────
+datasets:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  available:
+    - enron
+    - spamassassin
+
+# ── Preprocessing ─────────────────────────────────────────────────────────────
+preprocessing:
+  max_sentences: 50          # max sentences per email (paper value)
+  max_words: 50              # max words per sentence (paper value)
+  min_word_freq: 2
+
+# ── FastText embeddings ───────────────────────────────────────────────────────
+fasttext:
+  dim: 200                   # paper value
+  epoch: 10
+  min_count: 1
+  word_ngrams: 1
+  thread: 12                 # use all Xeon threads for FastText training
+  model_path: data/processed/fasttext.bin
+
+# ── HAN model architecture ────────────────────────────────────────────────────
+model:
+  # Word encoder — paper values
+  cnn_filters: [64, 128]
+  cnn_kernels: [3, 5]
+  word_gru_units: 50         # BiGRU → 100 concat
+  word_attention_dim: 100
+
+  # Sentence encoder — paper values
+  sent_gru_units: 50         # BiGRU → 100 concat
+  sent_attention_dim: 100
+
+  # Classifier
+  dropout_rate: 0.5
+  output_activation: sigmoid
+
+  # TCN variant (Phase 3 toggle — off by default)
+  use_tcn: false
+  tcn_filters: 64
+  tcn_kernel_size: 3
+  tcn_dilations: [1, 2, 4, 8]
+  tcn_dropout: 0.2
+
+# ── Training — CPU-optimised ──────────────────────────────────────────────────
+training:
+  epochs: 20
+  # Larger batch = fewer gradient steps per epoch = faster on CPU.
+  # 128 fits comfortably in 28 GB with max_sentences=50, max_words=50.
+  batch_size: 128
+  learning_rate: 0.001
+  optimizer: adam
+  loss: binary_crossentropy
+  cv_folds: 10               # 10-fold stratified CV (paper protocol)
+  early_stopping_patience: 3
+  checkpoint_dir: checkpoints
+  log_dir: logs
+  # Use all 12 Xeon threads for TF data-loading workers
+  tf_data_workers: 12
+
+# ── Evaluation ────────────────────────────────────────────────────────────────
+evaluation:
+  primary_metric: auc
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - auc
+
+# ── MLflow ────────────────────────────────────────────────────────────────────
+mlflow:
+  tracking_uri: http://mlflow:5000
+  experiment_name: FT-HAN-spam-detection
