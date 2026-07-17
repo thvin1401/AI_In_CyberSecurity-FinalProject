@@ -209,8 +209,10 @@ Prediction request:
 ```powershell
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d "{\"text\":\"Congratulations! You won a free prize. Click now.\"}"
+  -d "{\"subject\":\"Security update required\",\"body\":\"Congratulations! You won a free prize. Click now.\"}"
 ```
+
+> API accepts `subject` + `body` (preferred). Legacy `text` is still supported.
 
 Example response:
 

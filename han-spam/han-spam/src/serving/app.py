@@ -4,6 +4,7 @@ import os
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 import nltk
 import numpy as np
@@ -20,7 +21,21 @@ log = get_logger("api")
 
 
 class PredictRequest(BaseModel):
-    text: str = Field(..., min_length=1, description="Raw email text to classify")
+    # Backward-compatible field for existing clients.
+    text: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Raw email text to classify (legacy field).",
+    )
+    subject: Optional[str] = Field(
+        default=None,
+        description="Email subject line.",
+    )
+    body: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Email body/content.",
+    )
     threshold: float = Field(0.5, ge=0.0, le=1.0, description="Spam threshold")
 
 
@@ -103,11 +118,11 @@ class HanPredictor:
         )
         log.info("HAN predictor ready | checkpoint=%s", self.weights_path)
 
-    def predict(self, raw_text: str, threshold: float = 0.5) -> PredictResponse:
+    def predict(self, subject: str, body: str, threshold: float = 0.5) -> PredictResponse:
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Predictor is not initialized")
 
-        cleaned = clean_email_text(subject="", body=raw_text)
+        cleaned = clean_email_text(subject=subject, body=body)
         encoded = self.tokenizer.encode(cleaned)
         batch = np.expand_dims(encoded, axis=0)
 
@@ -179,4 +194,18 @@ def predict(payload: PredictRequest) -> PredictResponse:
     if predictor is None:
         raise HTTPException(status_code=503, detail="Model is still initializing")
 
-    return predictor.predict(raw_text=payload.text, threshold=payload.threshold)
+    subject = (payload.subject or "").strip()
+    body = (payload.body or "").strip()
+    text = (payload.text or "").strip()
+
+    # Prefer explicit body/subject payload. Fallback to legacy text field.
+    if not body and text:
+        body = text
+
+    if not body:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide `body` (preferred) or legacy `text` in request payload.",
+        )
+
+    return predictor.predict(subject=subject, body=body, threshold=payload.threshold)
