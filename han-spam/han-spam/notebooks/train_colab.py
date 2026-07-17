@@ -16,15 +16,40 @@
 # ## 1. Mount Google Drive
 
 # %%
+import os
+import time
 from google.colab import drive
-drive.mount('/content/drive')
+
+
+def mount_drive_with_retry(mount_point='/content/drive', retries=3):
+    """Mount Google Drive with cleanup + retry for common Colab mount failures."""
+    for attempt in range(1, retries + 1):
+        try:
+            # Clean stale mount/session state from previous failed attempts.
+            os.system(f"fusermount -u {mount_point} >/dev/null 2>&1 || true")
+            os.system("rm -rf /root/.config/Google/DriveFS")
+            os.makedirs(mount_point, exist_ok=True)
+
+            drive.mount(mount_point, force_remount=True)
+            print(f'Drive mounted on attempt {attempt}/{retries}')
+            return
+        except Exception as exc:
+            print(f'Mount attempt {attempt}/{retries} failed: {exc}')
+            if attempt == retries:
+                raise RuntimeError(
+                    'Google Drive mount failed after retries. '
+                    'Check popups/cookies and Google account auth in Colab browser tab.'
+                ) from exc
+            time.sleep(3)
+
+
+mount_drive_with_retry()
 
 DRIVE_ROOT = '/content/drive/MyDrive/han-spam'
 DATA_DIR = f'{DRIVE_ROOT}/data/processed'
 CKPT_DIR = f'{DRIVE_ROOT}/checkpoints'
 RESULTS_DIR = f'{DRIVE_ROOT}/results'
 
-import os
 os.makedirs(CKPT_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 

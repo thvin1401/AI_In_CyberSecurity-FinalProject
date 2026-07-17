@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -64,6 +65,7 @@ def main():
     log.info("STEP 2/5 - splitting by source + stratified train/test")
     df_enron = df[df["source"] == "enron"].reset_index(drop=True)
     df_sa    = df[df["source"] == "spamassassin"].reset_index(drop=True)
+    df_syn   = df[df["source"] == "synthetic"].reset_index(drop=True)
 
     # 80/20 stratified split per dataset
     en_train, en_test = train_test_split(
@@ -79,6 +81,13 @@ def main():
     en_test  = en_test.reset_index(drop=True)
     sa_train = sa_train.reset_index(drop=True)
     sa_test  = sa_test.reset_index(drop=True)
+
+    # Optional augmentation: include synthetic only in training splits
+    # to preserve real-only evaluation on Enron/SpamAssassin test sets.
+    if len(df_syn) > 0:
+        en_train = pd.concat([en_train, df_syn], ignore_index=True)
+        sa_train = pd.concat([sa_train, df_syn], ignore_index=True)
+        log.info(f"  synthetic added to training splits: {len(df_syn)}")
 
     log.info(f"  Enron  train: {len(en_train)}  test: {len(en_test)}")
     log.info(f"  SA     train: {len(sa_train)}  test: {len(sa_test)}")

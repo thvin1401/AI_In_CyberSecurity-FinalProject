@@ -33,6 +33,26 @@ x-train-volumes: &train-volumes
 
 services:
 
+  # ── FastAPI serving (Phase 5) ────────────────────────────────────────────
+  api:
+    image: han-spam:latest
+    container_name: han_api
+    environment:
+      <<: *train-env
+      HAN_CHECKPOINT_DIR: /workspace/checkpoints
+      HAN_PROCESSED_DIR: /workspace/data/processed
+    volumes:
+      - ./src:/workspace/src
+      - ./configs:/workspace/configs
+      - data_processed:/workspace/data/processed
+      - checkpoints:/workspace/checkpoints
+    ports:
+      - "8000:8000"
+    command: >
+      uvicorn src.serving.app:app
+        --host 0.0.0.0
+        --port 8000
+
   # ── Main training shell ────────────────────────────────────────────────────
   train:
     build:
