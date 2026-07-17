@@ -190,6 +190,74 @@ Open Jupyter at `http://localhost:8888` (token: `hanspam`) and run
 `notebooks/results_analysis.ipynb`. This reproduces Tables 3 & 4 from
 the paper and compares your AUC numbers against the paper's reported values.
 
+### Phase 5 — FastAPI serving (`/predict`)
+
+After you have pulled processed data + checkpoints from Drive, start the API:
+
+```powershell
+docker compose up -d api
+```
+
+Health check:
+
+```powershell
+curl http://localhost:8000/health
+```
+
+Prediction request:
+
+```powershell
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d "{\"text\":\"Congratulations! You won a free prize. Click now.\"}"
+```
+
+Example response:
+
+```json
+{
+  "label": "spam",
+  "spam_probability": 0.9821,
+  "ham_probability": 0.0179,
+  "threshold": 0.5
+}
+```
+
+Checkpoint selection:
+- If `HAN_WEIGHTS_PATH` is set, the API uses that exact checkpoint.
+- Otherwise it auto-selects the first `*.weights.h5` found under `checkpoints/`.
+
+### Phase 6 — Retrain with synthetic augmentation
+
+If you generated `data/raw/synthetic_spam_ham_dataset.csv`, you can include it as
+training augmentation (synthetic is added to train splits only; test splits remain real).
+
+Copy raw files into Docker volumes (one-time per fresh volume):
+
+```powershell
+docker compose up -d --no-deps train
+docker compose cp data/raw/enron_spam_data.csv train:/workspace/data/raw/
+docker compose cp data/raw/spamassassin train:/workspace/data/raw/
+docker compose cp data/raw/synthetic_spam_ham_dataset.csv train:/workspace/data/raw/
+```
+
+Run preprocessing with synthetic enabled:
+
+```powershell
+docker compose run --no-deps --rm -e HAN_INCLUDE_SYNTHETIC=true train python src/data/preprocess.py
+```
+
+> Important: set the flag with `-e HAN_INCLUDE_SYNTHETIC=true` on `docker compose run`.
+> Setting `$env:HAN_INCLUDE_SYNTHETIC` on the host shell alone does not always propagate.
+
+Push updated processed data to Drive:
+
+```powershell
+docker compose run --no-deps --rm train python scripts/drive_sync.py push-data
+```
+
+Then rerun Colab training to produce new checkpoints on augmented data.
+
 ---
 
 ## For collaborators (getting trained models without retraining)
@@ -280,6 +348,7 @@ han-spam/
 │   │   └── preprocess.py            # orchestrates the full pipeline
 │   ├── models/                       # HAN architecture (Phase 3)
 │   ├── training/                     # evaluation helpers (Phase 4)
+│   ├── serving/                      # FastAPI inference app (Phase 5)
 │   └── utils/
 │       ├── config.py
 │       ├── logger.py
@@ -301,6 +370,7 @@ docker compose up -d
 
 | Service | URL | Purpose |
 |---|---|---|
+| `api` | http://localhost:8000 | FastAPI `/predict` serving endpoint |
 | `train` | — | Preprocessing / sync shell |
 | `jupyter` | http://localhost:8888 | Notebooks (token: `hanspam`) |
 | `mlflow` | http://localhost:5000 | Experiment tracking |

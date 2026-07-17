@@ -22,6 +22,7 @@ Article ref (Zavrak & Yilmaz 2023, Sec 4.1):
     punctuation removed; lowercased.
 """
 import email
+import os
 import re
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ from src.utils.logger import get_logger
 log = get_logger("load_datasets")
 
 RAW_DIR = Path("data/raw")
+SYNTHETIC_DEFAULT_PATH = RAW_DIR / "synthetic_spam_ham_dataset.csv"
 
 # Tags to strip from subject line (article Sec 4.3 preprocessing)
 _REPLY_TAG_RE = re.compile(r"\b(re|fwd|fw)\b[\s:]*", re.IGNORECASE)
@@ -185,6 +187,53 @@ def load_spamassassin() -> pd.DataFrame:
     return df
 
 
+def load_synthetic(csv_path: Path | None = None) -> pd.DataFrame:
+    """
+    Load optional synthetic CSV with schema:
+      Subject, Message, Spam/Ham, ...
+
+    Keeps binary label mapping used by the current HAN pipeline:
+      spam -> 1, ham -> 0
+    """
+    path = csv_path or SYNTHETIC_DEFAULT_PATH
+    if not path.exists():
+        log.warning(f"Synthetic CSV not found at {path}; skipping synthetic data")
+        return pd.DataFrame(columns=["text", "label", "source"])
+
+    log.info(f"Loading synthetic dataset from {path} ...")
+    df_raw = pd.read_csv(path, encoding="utf-8", on_bad_lines="skip")
+
+    required = {"Subject", "Message", "Spam/Ham"}
+    missing = required - set(df_raw.columns)
+    if missing:
+        raise ValueError(
+            "Synthetic CSV missing required columns: " + ", ".join(sorted(missing))
+        )
+
+    records = []
+    for _, row in df_raw.iterrows():
+        subject = _strip_reply_tags(str(row.get("Subject") or ""))
+        body = str(row.get("Message") or "")
+        label_str = str(row.get("Spam/Ham") or "").strip().lower()
+        if label_str not in ("spam", "ham"):
+            continue
+        label = 1 if label_str == "spam" else 0
+        records.append(
+            {
+                "text": clean_email_text(subject, body),
+                "label": label,
+                "source": "synthetic",
+            }
+        )
+
+    df = pd.DataFrame(records)
+    log.info(
+        f"Loaded synthetic: {len(df)} emails "
+        f"({(df['label']==1).sum()} spam / {(df['label']==0).sum()} ham)"
+    )
+    return df
+
+
 # ── Combined ───────────────────────────────────────────────────────────────────
 def load_all() -> pd.DataFrame:
     """
@@ -192,9 +241,22 @@ def load_all() -> pd.DataFrame:
     Article uses EN and SA separately for cross-dataset evaluation,
     so we keep the 'source' column for that purpose in Phase 4.
     """
+    include_synthetic = (
+        os.environ.get("HAN_INCLUDE_SYNTHETIC", "false").strip().lower()
+        in ("1", "true", "yes", "y")
+    )
+
     df_enron = load_enron()
     df_sa = load_spamassassin()
-    df = pd.concat([df_enron, df_sa], ignore_index=True)
+
+    parts = [df_enron, df_sa]
+    if include_synthetic:
+        parts.append(load_synthetic())
+        log.info("Synthetic augmentation enabled via HAN_INCLUDE_SYNTHETIC")
+    else:
+        log.info("Synthetic augmentation disabled (set HAN_INCLUDE_SYNTHETIC=true to enable)")
+
+    df = pd.concat(parts, ignore_index=True)
 
     before = len(df)
     df = df[df["text"].str.strip().str.len() > 10]   # drop near-empty emails
@@ -204,7 +266,8 @@ def load_all() -> pd.DataFrame:
     log.info(f"Combined: {after} emails (dropped {before - after} empty/duplicate)")
     log.info(f"  spam: {(df['label']==1).sum()}  ham: {(df['label']==0).sum()}")
     log.info(f"  from enron: {(df['source']=='enron').sum()}  "
-             f"from spamassassin: {(df['source']=='spamassassin').sum()}")
+             f"from spamassassin: {(df['source']=='spamassassin').sum()}  "
+             f"from synthetic: {(df['source']=='synthetic').sum()}")
     return df.reset_index(drop=True)
 
 
